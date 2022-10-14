@@ -67,10 +67,14 @@ namespace KosTorrentCli.Bencode
                             //compensate cycle increment
                             --i;
 
+                            var subStrArray = new byte[value.Length];
+                            Array.Copy(readBytes, i - subStrArray.Length, subStrArray, 0, subStrArray.Length);
+
                             structureStack.Peek().Children.Add(new TorrentMetaItem
                             {
                                 Type = TorrentMetaType.String,
-                                Value = value
+                                Value = value,
+                                BencodeByteData = subStrArray.ToList() 
                             });
                         }
                         else

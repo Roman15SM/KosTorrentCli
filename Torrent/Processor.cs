@@ -31,7 +31,6 @@ namespace KosTorrentCli.Torrent
             var responseText = Encoding.ASCII.GetString(data);
             var responseTrie = parser.Parse(responseText, data);
             var responseObj = new AnnounceResponse(responseTrie);
-            //TODO: Create binary peer ip parser
         }
 
         private string GenerateSha1Hash(byte[] input)
