@@ -1,5 +1,6 @@
 ﻿using KosTorrentCli.Bencode;
 using KosTorrentCli.Torrent;
+using KosTorrentCli.Torrent.Models;
 
 namespace KosTorrentCli
 {

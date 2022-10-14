@@ -3,6 +3,8 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Web;
+using KosTorrentCli.Bencode;
+using KosTorrentCli.Torrent.Models;
 
 namespace KosTorrentCli.Torrent
 {
@@ -23,8 +25,13 @@ namespace KosTorrentCli.Torrent
 
             using var ms = new MemoryStream();
             response.GetResponseStream()?.CopyTo(ms);
+
+            var parser = new Parser();
             var data = ms.ToArray();
             var responseText = Encoding.ASCII.GetString(data);
+            var responseTrie = parser.Parse(responseText, data);
+            var responseObj = new AnnounceResponse(responseTrie);
+            //TODO: Create binary peer ip parser
         }
 
         private string GenerateSha1Hash(byte[] input)

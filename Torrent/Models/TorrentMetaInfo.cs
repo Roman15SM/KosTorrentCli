@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using KosTorrentCli.Bencode;
 
-namespace KosTorrentCli.Torrent
+namespace KosTorrentCli.Torrent.Models
 {
     public class TorrentMetaInfo
     {

@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace KosTorrentCli.Torrent
+namespace KosTorrentCli.Torrent.Models
 {
     public class TorrentStructureInfo
     {

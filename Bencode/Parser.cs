@@ -16,6 +16,11 @@ namespace KosTorrentCli.Bencode
             string readText = File.ReadAllText(path, Encoding.ASCII);
             var readBytes = File.ReadAllBytes(path);
 
+            return Parse(readText, readBytes);
+        }
+
+        public TorrentDataTrie Parse(string readText, byte[] readBytes)
+        {
             var structureStack = new Stack<TorrentMetaItem>();
             var data = new TorrentDataTrie();
 
