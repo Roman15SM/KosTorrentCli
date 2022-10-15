@@ -1,4 +1,5 @@
-﻿using KosTorrentCli.Bencode;
+﻿using System;
+using KosTorrentCli.Bencode;
 using KosTorrentCli.Torrent;
 using KosTorrentCli.Torrent.Models;
 
@@ -6,6 +7,12 @@ namespace KosTorrentCli
 {
     class Program
     {
+        /// <summary>
+        /// For now, path to torrent file is passed as a first console parameter
+        /// For debug purposes, you can set it up in KosTorrentCli project properties => Debug => Application arguments
+        /// All necessary validations + unit tests will come soon
+        /// </summary>
+        /// <param name="args"></param>
         static void Main(string[] args)
         {
             var parser = new Parser();
@@ -14,7 +21,7 @@ namespace KosTorrentCli
             var torrentMetaData = new TorrentMetaInfo(torrentDataTrie);
 
             var processor = new Processor();
-            processor.GetPeers(torrentMetaData);
+            var peers = processor.GetPeers(torrentMetaData);
         }
     }
 }

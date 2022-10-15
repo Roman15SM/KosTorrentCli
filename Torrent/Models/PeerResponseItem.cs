@@ -8,5 +8,10 @@
         public string PeerIp { get; set; }
 
         public int Port { get; set; }
+
+        public string GetIp()
+        {
+            return $"{PeerIp}:{Port}";
+        }
     }
 }
