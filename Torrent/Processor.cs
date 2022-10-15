@@ -42,7 +42,7 @@ namespace KosTorrentCli.Torrent
                     {
                         var ip = peer.GetIp();
 
-                        if(IsIpValid(ip))
+                        if(IsIpValid(peer.PeerIp))
                             peers.Add(peer.GetIp());
                     }
                 }
