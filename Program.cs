@@ -1,4 +1,4 @@
-﻿using System;
+﻿using System.Linq;
 using KosTorrentCli.Bencode;
 using KosTorrentCli.Torrent;
 using KosTorrentCli.Torrent.Models;
@@ -21,7 +21,13 @@ namespace KosTorrentCli
             var torrentMetaData = new TorrentMetaInfo(torrentDataTrie);
 
             var processor = new Processor();
-            var peers = processor.GetPeers(torrentMetaData);
+            var infoHash = processor.GenerateSha1Hash(torrentMetaData.Info.BencodeByteData.ToArray());
+
+            var peers = processor.GetPeers(torrentMetaData, infoHash);
+
+            //For testing purpose
+            var testPeer = peers.First();
+            var handshakeMessage = new PeerHandShake(PeerIdGenerator.GetPeerId(), infoHash).GenerateHandShakeMessage();
         }
     }
 }

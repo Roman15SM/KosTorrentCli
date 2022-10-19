@@ -22,19 +22,21 @@ namespace KosTorrentCli.Torrent
         /// All duplicates will be eliminated by HashSet as it is.
         /// </summary>
         /// <param name="metaInfo"></param>
+        /// <param name="infoHash"></param>
         /// <returns></returns>
-        public HashSet<string> GetPeers(TorrentMetaInfo metaInfo)
+        public HashSet<string> GetPeers(TorrentMetaInfo metaInfo, byte[] infoHash)
         {
             var urlList = new List<string>(metaInfo.AnnounceList)
             {
                 metaInfo.AnnounceUrl
             };
 
+            var encodedHash = HttpUtility.UrlEncode(infoHash);
             var peers = new HashSet<string>();
 
             Parallel.ForEach(urlList, ul =>
             {
-                var responsePeers = GetPeersFromUrl(metaInfo, ul);
+                var responsePeers = GetPeersFromUrl(metaInfo, ul, encodedHash);
 
                 lock (_locker)
                 {
@@ -43,7 +45,7 @@ namespace KosTorrentCli.Torrent
                         var ip = peer.GetIp();
 
                         if(IsIpValid(peer.PeerIp))
-                            peers.Add(peer.GetIp());
+                            peers.Add(ip);
                     }
                 }
             });
@@ -57,13 +59,12 @@ namespace KosTorrentCli.Torrent
         /// </summary>
         /// <param name="metaInfo"></param>
         /// <param name="announceUrl"></param>
+        /// <param name="hashedInfo"></param>
         /// <returns></returns>
-        public List<PeerResponseItem> GetPeersFromUrl(TorrentMetaInfo metaInfo, string announceUrl)
+        public List<PeerResponseItem> GetPeersFromUrl(TorrentMetaInfo metaInfo, string announceUrl, string hashedInfo)
         {
             if (!IsUrlValid(announceUrl))
                 return new List<PeerResponseItem>();
-
-            var hashedInfo = GenerateSha1Hash(metaInfo.Info.BencodeByteData.ToArray());
             var hasParameters = HttpUtility.ParseQueryString(metaInfo.AnnounceUrl).Count > 1;
 
             var url = $"{announceUrl}{(hasParameters ? "&" : "?")}info_hash={hashedInfo}&peer_id={PeerIdGenerator.GetPeerId()}" +
@@ -86,14 +87,12 @@ namespace KosTorrentCli.Torrent
             return responseObj.Peers;
         }
 
-        private string GenerateSha1Hash(byte[] input)
+        public byte[] GenerateSha1Hash(byte[] input)
         {
             using var hashManager = new SHA1Managed();
             var hash = hashManager.ComputeHash(input);
 
-            var encodedHash = HttpUtility.UrlEncode(hash);
-
-            return encodedHash;
+            return hash;
         }
 
         private bool IsUrlValid(string url)
