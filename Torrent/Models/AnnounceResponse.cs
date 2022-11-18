@@ -105,7 +105,7 @@ namespace KosTorrentCli.Torrent.Models
                              (bencodeByteData[index + 1] & 0xFF) + "." + 
                              (bencodeByteData[index + 2] & 0xFF) + "." +
                              (bencodeByteData[index + 3] & 0xFF),
-                    Port = BitConverter.ToUInt16(new byte[2] { bencodeByteData[index + 4], bencodeByteData[index + 5] }, 0)
+                    Port = BitConverter.ToUInt16(new byte[2] { bencodeByteData[index + 5], bencodeByteData[index + 4] }, 0)
                 };
 
                 result.Add(peer);
