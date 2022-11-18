@@ -68,7 +68,7 @@ namespace KosTorrentCli.Bencode
                             --i;
 
                             var subStrArray = new byte[value.Length];
-                            Array.Copy(readBytes, i - subStrArray.Length, subStrArray, 0, subStrArray.Length);
+                            Array.Copy(readBytes, i - subStrArray.Length + 1, subStrArray, 0, subStrArray.Length);
 
                             structureStack.Peek().Children.Add(new TorrentMetaItem
                             {

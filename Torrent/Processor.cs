@@ -24,7 +24,7 @@ namespace KosTorrentCli.Torrent
         /// <param name="metaInfo"></param>
         /// <param name="infoHash"></param>
         /// <returns></returns>
-        public HashSet<string> GetPeers(TorrentMetaInfo metaInfo, byte[] infoHash)
+        public List<PeerResponseItem> GetPeers(TorrentMetaInfo metaInfo, byte[] infoHash)
         {
             var urlList = new List<string>(metaInfo.AnnounceList)
             {
@@ -32,7 +32,8 @@ namespace KosTorrentCli.Torrent
             };
 
             var encodedHash = HttpUtility.UrlEncode(infoHash);
-            var peers = new HashSet<string>();
+            var peers = new List<PeerResponseItem>();
+            var strPeers = new HashSet<string>();
 
             Parallel.ForEach(urlList, ul =>
             {
@@ -42,10 +43,10 @@ namespace KosTorrentCli.Torrent
                 {
                     foreach(var peer in responsePeers)
                     {
-                        var ip = peer.GetIp();
-
-                        if(IsIpValid(peer.PeerIp))
-                            peers.Add(ip);
+                        if (IsIpValid(peer.PeerIp) && strPeers.Add(peer.GetIp()))
+                        {
+                            peers.Add(peer);
+                        }
                     }
                 }
             });
