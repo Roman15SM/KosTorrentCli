@@ -5,9 +5,6 @@ namespace KosTorrentCli.Torrent.Models
 {
     public class PeerHandShake
     {
-        //pstrlen
-        public const string ProtocolStringLength = "19";
-
         //pstr
         public const string ProtocolString = "BitTorrent protocol";
 
@@ -26,7 +23,8 @@ namespace KosTorrentCli.Torrent.Models
         {
             var handshakeMessage = new List<byte>();
 
-            var protocolPart = Encoding.ASCII.GetBytes($"{ProtocolStringLength}{ProtocolString}");
+            handshakeMessage.AddRange(Encoding.ASCII.GetBytes(new[] { '\x13' }));
+            var protocolPart = Encoding.ASCII.GetBytes($"{ProtocolString}");
             handshakeMessage.AddRange(protocolPart);
 
             //Supported version is 1.0 that is why all reserved 8 bytes are zeros
