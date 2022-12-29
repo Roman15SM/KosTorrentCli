@@ -34,12 +34,13 @@ namespace KosTorrentCli.Torrent.Models
                 IsPrivate = trie.GetItemString("private") == "1",
                 PieceLength = trie.GetItemInteger("piece length") != null ? trie.GetItemInteger("piece length").Value : 0,
                 Pieces = new List<TorrentFilePieceInfo>(),
-                BencodeByteData = trie.GetItem("info")?.BencodeByteData
+                BencodeByteData = trie.GetItem("info")?.BencodeByteData,
+                PiecesBytes = trie.GetItem("pieces")?.BencodeByteData,
             };
 
             var pieceStruct = trie.GetItem("files");
 
-            if(pieceStruct.Type == TorrentMetaType.Unset)
+            if (pieceStruct.Type == TorrentMetaType.Unset)
                 return;
 
             var items = trie.GetChildrenByType(TorrentMetaType.Dictionary, pieceStruct);

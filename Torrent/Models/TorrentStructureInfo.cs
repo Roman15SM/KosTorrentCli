@@ -15,5 +15,7 @@ namespace KosTorrentCli.Torrent.Models
         public long TotalLength { get; set; }
 
         public List<TorrentFilePieceInfo> Pieces { get; set; }
+
+        public List<byte> PiecesBytes { get; set; }
     }
 }
