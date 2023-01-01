@@ -24,7 +24,7 @@ namespace KosTorrentCli.Torrent
         /// <param name="metaInfo"></param>
         /// <param name="infoHash"></param>
         /// <returns></returns>
-        public List<PeerResponseItem> GetPeers(TorrentMetaInfo metaInfo, byte[] infoHash)
+        public List<PeerResponseItem> GetPeers(TorrentMetaInfo metaInfo, byte[] infoHash, string peerId)
         {
             var urlList = new List<string>(metaInfo.AnnounceList)
             {
@@ -37,7 +37,7 @@ namespace KosTorrentCli.Torrent
 
             Parallel.ForEach(urlList, ul =>
             {
-                var responsePeers = GetPeersFromUrl(metaInfo, ul, encodedHash);
+                var responsePeers = GetPeersFromUrl(metaInfo, ul, encodedHash, peerId);
 
                 lock (_locker)
                 {
@@ -62,13 +62,13 @@ namespace KosTorrentCli.Torrent
         /// <param name="announceUrl"></param>
         /// <param name="hashedInfo"></param>
         /// <returns></returns>
-        public List<PeerResponseItem> GetPeersFromUrl(TorrentMetaInfo metaInfo, string announceUrl, string hashedInfo)
+        public List<PeerResponseItem> GetPeersFromUrl(TorrentMetaInfo metaInfo, string announceUrl, string hashedInfo, string peerId)
         {
             if (!IsUrlValid(announceUrl))
                 return new List<PeerResponseItem>();
             var hasParameters = HttpUtility.ParseQueryString(metaInfo.AnnounceUrl).Count > 1;
 
-            var url = $"{announceUrl}{(hasParameters ? "&" : "?")}info_hash={hashedInfo}&peer_id={PeerIdGenerator.GetPeerId()}" +
+            var url = $"{announceUrl}{(hasParameters ? "&" : "?")}info_hash={hashedInfo}&peer_id={peerId}" +
                       $"&port=6881&uploaded=0&downloaded=0&left={metaInfo.Info.TotalLength}&compact=0&no_peer_id=1&event=started";
 
             var encodedUrl = HttpUtility.UrlPathEncode(url);

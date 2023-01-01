@@ -23,7 +23,7 @@ namespace KosTorrentCli
 
             AppDomain currentDomain = AppDomain.CurrentDomain;
             currentDomain.UnhandledException += new UnhandledExceptionEventHandler(GlobalErrorHandler);
-
+            var peerId = PeerIdGenerator.GetPeerId();
             var parser = new Parser();
             var path = args[0];
             var torrentDataTrie = parser.Parse(path);
@@ -32,8 +32,8 @@ namespace KosTorrentCli
             var processor = new Processor();
             var infoHash = processor.GenerateSha1Hash(torrentMetaData.Info.BencodeByteData.ToArray());
 
-            var peers = processor.GetPeers(torrentMetaData, infoHash);
-            var handshakeMessage = new PeerHandShake(PeerIdGenerator.GetPeerId(), infoHash).GenerateHandShakeMessage();
+            var peers = processor.GetPeers(torrentMetaData, infoHash, peerId);
+            var handshakeMessage = new PeerHandShake(peerId, infoHash).GenerateHandShakeMessage();
             var communicator = new TcpCommunicator();
             var allData = new Dictionary<int, List<byte>>();
             var alreadyDownloadedPieces = new HashSet<int>();
