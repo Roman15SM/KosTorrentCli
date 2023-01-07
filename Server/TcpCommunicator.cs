@@ -163,6 +163,7 @@ namespace KosTorrentCli.Server
                                 allData[pieceIndex]))
                         {
                             Console.WriteLine($"Invalid piece discovered. Piece index: {pieceIndex}");
+                            allData[pieceIndex] = new List<byte>();
                             return;
                         }
 
