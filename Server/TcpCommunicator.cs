@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Net.Sockets;
 using System.Text;
+using KosTorrentCli.Torrent;
 using KosTorrentCli.Torrent.Models;
 
 namespace KosTorrentCli.Server
@@ -157,6 +158,14 @@ namespace KosTorrentCli.Server
 
                     if (allData[pieceIndex].Count == metaInfo.Info.PieceLength)
                     {
+                        if (!ValidatePiece(
+                                metaInfo.Info.PiecesBytes.Skip(pieceIndex * PieceHashLength).Take(PieceHashLength).ToArray(),
+                                allData[pieceIndex]))
+                        {
+                            Console.WriteLine($"Invalid piece discovered. Piece index: {pieceIndex}");
+                            return;
+                        }
+
                         ++pieceIterator;
                         alreadyDownloadedPieces.Add(pieceIndex);
                     }
@@ -196,6 +205,23 @@ namespace KosTorrentCli.Server
                     Console.WriteLine(Encoding.ASCII.GetString(data, 0, bytes));
                     break;
             }
+        }
+
+        private bool ValidatePiece(byte[] validPieceHash, List<byte> pieceData)
+        {
+            var processor = new Processor();
+            var infoHash = processor.GenerateSha1Hash(pieceData.ToArray());
+
+            if (infoHash.Length != PieceHashLength)
+                return false;
+
+            for (var i = 0; i < infoHash.Length; ++i)
+            {
+                if (infoHash[i] != validPieceHash[i])
+                    return false;
+            }
+
+            return true;
         }
 
         private bool IsHandShakeSuccessful(TcpClient listener, byte[] message)
