@@ -68,8 +68,12 @@ namespace KosTorrentCli.Torrent.Models
                     {
                         foreach (var pathPiece in item.Children[iter + 1].Children)
                         {
-                            if(pathPiece.Type == TorrentMetaType.String)
-                                piece.Path.Add(pathPiece.Value);
+                            if (pathPiece.Type == TorrentMetaType.String)
+                            {
+                                var utfName = System.Text.Encoding.Default.GetString(pathPiece.BencodeByteData.ToArray());
+
+                                piece.Path.Add(utfName);
+                            }
                         }
                     }
 

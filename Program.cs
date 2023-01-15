@@ -58,6 +58,22 @@ namespace KosTorrentCli
                     }
                 };
 
+            foreach (var piece in currentFilePieces)
+            {
+                if (piece.Path.Count <= 1)
+                    continue;
+
+                var piecePath = string.Empty;
+
+                for(var i = 0; i < piece.Path.Count - 1; ++i)
+                {
+                    piecePath += piece.Path[i] + "/";
+                }
+
+                Directory.CreateDirectory(piecePath);
+                piece.Path[0] = piecePath + piece.Path.Last();
+            }
+
             var leftOver = new List<byte>();
             var iterator = 0;
             var downloadedAmount = 0;

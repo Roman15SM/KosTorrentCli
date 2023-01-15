@@ -113,7 +113,7 @@ namespace KosTorrentCli.Server
                     }
                 }
 
-                Console.WriteLine("FINISH!!!!");
+                Console.WriteLine("Downloaded all possible pieces from peer");
             }
             catch (Exception e)
             {
