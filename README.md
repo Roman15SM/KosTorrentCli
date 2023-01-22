@@ -26,9 +26,9 @@ With all questions please write me at Roman15SM@gmail.com
 
 :white_check_mark: Implement piece SHA-1 validation
 
-:arrow_forward: Implement download when piece size > 16kB (some peers has a standard block size as a 32kB instead of 16kb, therefore it is a little bit hard to figure out if you receive whole block before send "request" request to finish piece download) 
+:white_check_mark: Implement download when piece size > 16kB (some peers has a standard block size as a 32kB instead of 16kb, therefore it is a little bit hard to figure out if you receive whole block before send "request" request to finish piece download) 
 
-:white_square_button: Implement immediate piece allocation on hard drive(for now it is in memory and allocated once all available pieces are downloaded).
+:arrow_forward: Implement immediate piece allocation on hard drive(for now it is in memory and allocated once all available pieces are downloaded).
 
 :white_square_button: Speed up process by serving each peer in a separate thread(Implement concurrent piece downloading).
 
