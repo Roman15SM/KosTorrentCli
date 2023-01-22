@@ -38,6 +38,12 @@ namespace KosTorrentCli
             var allData = new Dictionary<int, List<byte>>();
             var alreadyDownloadedPieces = new HashSet<int>();
 
+            if (peers == null || !peers.Any())
+            {
+                Console.WriteLine("No peer available");
+                return;
+            }
+
             foreach (var peer in peers)
             {
                 communicator.DownloadTorrent(peer.PeerIp, peer.Port, handshakeMessage, torrentMetaData, allData, alreadyDownloadedPieces);
@@ -118,7 +124,7 @@ namespace KosTorrentCli
         static void GlobalErrorHandler(object sender, UnhandledExceptionEventArgs args)
         {
             Exception e = (Exception)args.ExceptionObject;
-            Console.WriteLine("MyHandler caught : " + e.Message);
+            Console.WriteLine("GlobalErrorHandler caught : " + e.Message);
             Console.WriteLine("Runtime terminating: {0}", args.IsTerminating);
         }
     }

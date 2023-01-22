@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Net.Sockets;
 using System.Text;
@@ -11,15 +10,19 @@ namespace KosTorrentCli.Server
 {
     public class TcpCommunicator
     {
-        private const int BlockSize = 16384;
+        //max limit per documentation: 128kB
+        private int BlockSize = 32768*4;
         private const int PieceHashLength = 20;
         private const int MinMessageLength = 5;
         private const int IntByteLength = 4;
-        private const int WaitingTime = 30000;
+        private const int PieceHeaderSize = 13;
 
         public void DownloadTorrent(string endpoint, int port, byte[] message, TorrentMetaInfo metaInfo, Dictionary<int, List<byte>> allData, HashSet<int> alreadyDownloadedPieces)
         {
             var listener = new TcpClient();
+
+            if (metaInfo.Info.PieceLength < BlockSize)
+                BlockSize = metaInfo.Info.PieceLength;
 
             try
             {
@@ -35,21 +38,13 @@ namespace KosTorrentCli.Server
                 var isMessageTail = false;
                 var messagePrefix = new List<byte>();
                 var tailLength = 0;
-                var waiter = Stopwatch.StartNew();
 
                 while (pieceIterator < pieceAmount)
                 {
                     var filledBufferLength = stream.Read(data, 0, BlockSize);
 
                     if (filledBufferLength == 0)
-                    {
-                        if (waiter.ElapsedTicks > WaitingTime)
-                            return;
-
                         continue;
-                    }
-
-                    waiter.Restart();
 
                     var offset = 0;
                     
@@ -154,7 +149,7 @@ namespace KosTorrentCli.Server
                     if (!allData.ContainsKey(pieceIndex))
                         allData[pieceIndex] = new List<byte>();
 
-                    allData[pieceIndex].AddRange(data.Skip(13));
+                    allData[pieceIndex].AddRange(data.Skip(PieceHeaderSize));
 
                     if (allData[pieceIndex].Count == metaInfo.Info.PieceLength)
                     {
@@ -169,12 +164,16 @@ namespace KosTorrentCli.Server
 
                         ++pieceIterator;
                         alreadyDownloadedPieces.Add(pieceIndex);
+                        Console.WriteLine($"Piece {pieceIndex} is fully downloaded, size: {allData[pieceIndex].Count}");
+                        Console.WriteLine($"Downloaded ({alreadyDownloadedPieces.Count}/{metaInfo.Info.PiecesBytes.Count / PieceHashLength})");
                     }
+                    else
+                    {
+                        Console.WriteLine($"Piece {pieceIndex} updated, downloaded: {allData[pieceIndex].Count}");
 
-                    Console.WriteLine($"Piece index updated: {pieceIndex}, downloaded: {allData[pieceIndex].Count}");
-
-                    //var request = MessageGenerator.GenerateRequestRequest(pieceIterator, BlockSize - currentPieceLoad, BlockSize);
-                    //stream.Write(request, 0, request.Length);
+                        var request = MessageGenerator.GenerateRequestRequest(pieceIndex, metaInfo.Info.PieceLength - allData[pieceIndex].Count, BlockSize);
+                        stream.Write(request, 0, request.Length);
+                    }
                     break;
                 case PeerMessageType.BitField:
                     var body = MessageParser.GetBitFieldBody(data);
