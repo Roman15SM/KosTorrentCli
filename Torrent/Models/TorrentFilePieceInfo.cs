@@ -4,7 +4,7 @@ namespace KosTorrentCli.Torrent.Models
 {
     public class TorrentFilePieceInfo
     {
-        public int Length { get; set; }
+        public long Length { get; set; }
 
         public string MdSum { get; set; }
 

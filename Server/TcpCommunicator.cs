@@ -11,18 +11,18 @@ namespace KosTorrentCli.Server
     public class TcpCommunicator
     {
         //max limit per documentation: 128kB
-        private int BlockSize = 32768*4;
+        private int _blockSize = 32768*4;
         private const int PieceHashLength = 20;
         private const int MinMessageLength = 5;
         private const int IntByteLength = 4;
         private const int PieceHeaderSize = 13;
 
-        public void DownloadTorrent(string endpoint, int port, byte[] message, TorrentMetaInfo metaInfo, Dictionary<int, List<byte>> allData, HashSet<int> alreadyDownloadedPieces)
+        public void DownloadTorrent(string endpoint, int port, byte[] message, TorrentMetaInfo metaInfo, Dictionary<int, List<byte>> allData, HashSet<int> alreadyDownloadedPieces, FileCreator creator)
         {
             var listener = new TcpClient();
 
-            if (metaInfo.Info.PieceLength < BlockSize)
-                BlockSize = metaInfo.Info.PieceLength;
+            if (metaInfo.Info.PieceLength < _blockSize)
+                _blockSize = metaInfo.Info.PieceLength;
 
             try
             {
@@ -32,16 +32,17 @@ namespace KosTorrentCli.Server
                     return;
 
                 var stream = listener.GetStream();
-                var data = new byte[BlockSize];
+                var data = new byte[_blockSize];
                 var pieceAmount = metaInfo.Info.PiecesBytes.Count / PieceHashLength - alreadyDownloadedPieces.Count;
                 var pieceIterator = 0;
                 var isMessageTail = false;
                 var messagePrefix = new List<byte>();
                 var tailLength = 0;
+                var bitfieldAvailablePieces = new HashSet<int>();
 
                 while (pieceIterator < pieceAmount)
                 {
-                    var filledBufferLength = stream.Read(data, 0, BlockSize);
+                    var filledBufferLength = stream.Read(data, 0, _blockSize);
 
                     if (filledBufferLength == 0)
                         continue;
@@ -64,7 +65,7 @@ namespace KosTorrentCli.Server
 
                         var messageId = (PeerMessageType)Enum.Parse(typeof(PeerMessageType), messagePrefix[4].ToString());
                         Console.WriteLine($"Message Id: {messageId}");
-                        MessageProcessor(messagePrefix.ToArray(), stream, metaInfo, alreadyDownloadedPieces, messagePrefix.Count, messageId, allData, ref pieceIterator, ref pieceAmount);
+                        MessageProcessor(messagePrefix.ToArray(), stream, metaInfo, alreadyDownloadedPieces, messagePrefix.Count, messageId, allData, creator, bitfieldAvailablePieces, ref pieceIterator, ref pieceAmount);
                     }
 
                     if (filledBufferLength < MinMessageLength)
@@ -101,7 +102,7 @@ namespace KosTorrentCli.Server
                         }
                         else
                         {
-                            MessageProcessor(communicationBlock, stream, metaInfo, alreadyDownloadedPieces, blockLength, messageId, allData, ref pieceIterator, ref pieceAmount);
+                            MessageProcessor(communicationBlock, stream, metaInfo, alreadyDownloadedPieces, blockLength, messageId, allData, creator, bitfieldAvailablePieces, ref pieceIterator, ref pieceAmount);
                         }
 
                         offset += blockLength;
@@ -121,7 +122,7 @@ namespace KosTorrentCli.Server
             }
         }
 
-        private void MessageProcessor(byte[] data, NetworkStream stream, TorrentMetaInfo metaInfo, HashSet<int> alreadyDownloadedPieces, int bytes, PeerMessageType messageId, Dictionary<int, List<byte>> allData, ref int pieceIterator, ref int pieceAmount)
+        private void MessageProcessor(byte[] data, NetworkStream stream, TorrentMetaInfo metaInfo, HashSet<int> alreadyDownloadedPieces, int bytes, PeerMessageType messageId, Dictionary<int, List<byte>> allData, FileCreator creator, HashSet<int> bitfieldAvailablePieces, ref int pieceIterator, ref int pieceAmount)
         {
             switch (messageId)
             {
@@ -132,13 +133,20 @@ namespace KosTorrentCli.Server
 
                     if (!alreadyDownloadedPieces.Contains(pieceNumber))
                     {
-                        var request = MessageGenerator.GenerateRequestRequest(pieceNumber, 0, BlockSize);
+                        var request = MessageGenerator.GenerateRequestRequest(pieceNumber, 0, _blockSize);
                         stream.Write(request, 0, request.Length);
                     }
                     break;
                 case PeerMessageType.UnChoke:
                     var interested = MessageGenerator.GenerateInterestedRequest();
                     stream.Write(interested, 0, interested.Length);
+
+                    foreach (var bitfieldPieceNumber in bitfieldAvailablePieces)
+                    {
+                        var request = MessageGenerator.GenerateRequestRequest(bitfieldPieceNumber, 0, _blockSize);
+                        stream.Write(request, 0, request.Length);
+                    }
+
                     break;
                 case PeerMessageType.Piece:
                     var pieceIndex = MessageParser.GetPieceIndex(data);
@@ -164,14 +172,18 @@ namespace KosTorrentCli.Server
 
                         ++pieceIterator;
                         alreadyDownloadedPieces.Add(pieceIndex);
+                        creator.AllocatePiece(allData[pieceIndex].ToArray(), metaInfo, pieceIndex);
                         Console.WriteLine($"Piece {pieceIndex} is fully downloaded, size: {allData[pieceIndex].Count}");
                         Console.WriteLine($"Downloaded ({alreadyDownloadedPieces.Count}/{metaInfo.Info.PiecesBytes.Count / PieceHashLength})");
+
+                        //piece data cleared
+                        allData[pieceIndex] = new List<byte>();
                     }
                     else
                     {
                         Console.WriteLine($"Piece {pieceIndex} updated, downloaded: {allData[pieceIndex].Count}");
 
-                        var request = MessageGenerator.GenerateRequestRequest(pieceIndex, metaInfo.Info.PieceLength - allData[pieceIndex].Count, BlockSize);
+                        var request = MessageGenerator.GenerateRequestRequest(pieceIndex, metaInfo.Info.PieceLength - allData[pieceIndex].Count, _blockSize);
                         stream.Write(request, 0, request.Length);
                     }
                     break;
@@ -191,8 +203,7 @@ namespace KosTorrentCli.Server
 
                                 if (!alreadyDownloadedPieces.Contains(pieceId))
                                 {
-                                    var request = MessageGenerator.GenerateRequestRequest(i * 8 + j, 0, BlockSize);
-                                    stream.Write(request, 0, request.Length);
+                                    bitfieldAvailablePieces.Add(pieceId);
                                     ++availablePieces;
                                 }
                             }

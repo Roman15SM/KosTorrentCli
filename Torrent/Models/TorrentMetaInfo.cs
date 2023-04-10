@@ -30,7 +30,7 @@ namespace KosTorrentCli.Torrent.Models
             this.Encoding = trie.GetItemString("encoding");
             this.Info = new TorrentStructureInfo
             {
-                Name = trie.GetItemString("name"),
+                Name = System.Text.Encoding.Default.GetString(trie.GetItem("name").BencodeByteData.ToArray()),
                 IsPrivate = trie.GetItemString("private") == "1",
                 PieceLength = trie.GetItemInteger("piece length") != null ? trie.GetItemInteger("piece length").Value : 0,
                 Pieces = new List<TorrentFilePieceInfo>(),
@@ -56,7 +56,7 @@ namespace KosTorrentCli.Torrent.Models
                 {
                     if (item.Children[iter].Value == "length")
                     {
-                        int.TryParse(item.Children[iter + 1].Value, out var length);
+                        long.TryParse(item.Children[iter + 1].Value, out var length);
                         piece.Length = length;
                         this.Info.TotalLength += length;
                     }
