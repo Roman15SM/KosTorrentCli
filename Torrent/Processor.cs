@@ -107,6 +107,11 @@ namespace KosTorrentCli.Torrent
             if (!IPAddress.TryParse(ip, out var address)) 
                 return false;
 
+            const string invalidDefaultIp = "255.255.255.255";
+
+            if (ip == invalidDefaultIp)
+                return false;
+
             return address.AddressFamily is AddressFamily.InterNetwork or AddressFamily.InterNetworkV6;
         }
     }

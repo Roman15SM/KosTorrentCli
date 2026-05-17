@@ -1,10 +1,11 @@
-﻿using System;
+﻿using KosTorrentCli.Torrent;
+using KosTorrentCli.Torrent.Models;
+using Microsoft.VisualBasic;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Sockets;
 using System.Text;
-using KosTorrentCli.Torrent;
-using KosTorrentCli.Torrent.Models;
 
 namespace KosTorrentCli.Server
 {
@@ -39,6 +40,8 @@ namespace KosTorrentCli.Server
                 var messagePrefix = new List<byte>();
                 var tailLength = 0;
                 var bitfieldAvailablePieces = new HashSet<int>();
+                var bitFieldrequest = MessageGenerator.GenerateBitFieldRequest(pieceAmount);
+                stream.Write(bitFieldrequest, 0, bitFieldrequest.Length);
 
                 while (pieceIterator < pieceAmount)
                 {
@@ -210,7 +213,10 @@ namespace KosTorrentCli.Server
                         }
                     }
 
+                    Console.WriteLine($"Bitfield available pieces: {string.Join(",", bitfieldAvailablePieces)}");
                     pieceAmount = availablePieces;
+                    var interestedRequest = MessageGenerator.GenerateInterestedRequest();
+                    stream.Write(interestedRequest, 0, interestedRequest.Length);
                     break;
                 default:
                     Console.WriteLine(Encoding.ASCII.GetString(data, 0, bytes));

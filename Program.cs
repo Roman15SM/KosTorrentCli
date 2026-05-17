@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using KosTorrentCli.Bencode;
 using KosTorrentCli.Server;
@@ -19,7 +18,7 @@ namespace KosTorrentCli
         /// <param name="args"></param>
         static void Main(string[] args)
         {
-            //TcpRule.AddTcpRule();
+            TcpRule.AddTcpRule();
 
             AppDomain currentDomain = AppDomain.CurrentDomain;
             currentDomain.UnhandledException += new UnhandledExceptionEventHandler(GlobalErrorHandler);

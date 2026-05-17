@@ -7,9 +7,29 @@ namespace KosTorrentCli.Server
 {
     public static class MessageGenerator
     {
-        public static byte[] GenerateBitFieldRequest()
+        public static byte[] GenerateBitFieldRequest(int pieceAmount)
         {
-            throw new NotImplementedException();
+            var bitfieldMessage = new List<byte>();
+
+            //length part
+            var itemAmount = pieceAmount / 8;
+            if (pieceAmount % 8 > 0)
+                ++itemAmount;
+
+            ++itemAmount;
+            var amountPart = BitConverter.GetBytes(itemAmount).Reverse();
+            bitfieldMessage.AddRange(amountPart);
+
+            //bitfield id = 5
+            var idPart = Encoding.ASCII.GetBytes(new[] { '\x05' });
+            bitfieldMessage.AddRange(idPart);
+
+            for (var i = 0; i < itemAmount - 1; ++i)
+            {
+                bitfieldMessage.AddRange(Encoding.ASCII.GetBytes(new[] { '\x00' }));
+            }
+
+            return bitfieldMessage.ToArray();
         }
 
         public static byte[] GenerateKeepAliveRequest()
