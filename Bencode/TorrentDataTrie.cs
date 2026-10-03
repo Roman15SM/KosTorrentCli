@@ -52,6 +52,17 @@ namespace KosTorrentCli.Bencode
             return null;
         }
 
+        public long? GetItemLong(string name)
+        {
+            if (!TrieItemLinks.ContainsKey(name) || TrieItemLinks[name].Type != TorrentMetaType.Integer)
+                return null;
+
+            if (long.TryParse(TrieItemLinks[name].Value, out var longValue))
+                return longValue;
+
+            return null;
+        }
+
         public List<TorrentMetaItem> GetChildrenByType(TorrentMetaType info, TorrentMetaItem parent)
         {
             var result = new List<TorrentMetaItem>();

@@ -64,6 +64,13 @@ namespace KosTorrentCli.Server
             return BitConverter.ToInt32(lengthArr);
         }
 
+        //piece message: <len><id=7><index><begin><block>
+        public static int GetBlockOffset(byte[] message)
+        {
+            var offsetArr = message.Skip(9).Take(4).Reverse().ToArray();
+            return BitConverter.ToInt32(offsetArr);
+        }
+
         public static byte[] GetBitFieldBody(byte[] message)
         {
             return message.Skip(5).ToArray();

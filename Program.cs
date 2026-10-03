@@ -34,7 +34,7 @@ namespace KosTorrentCli
             var peers = processor.GetPeers(torrentMetaData, infoHash, peerId);
             var handshakeMessage = new PeerHandShake(peerId, infoHash).GenerateHandShakeMessage();
             var communicator = new TcpCommunicator();
-            var allData = new Dictionary<int, List<byte>>();
+            var allData = new Dictionary<int, PieceProgress>();
             var alreadyDownloadedPieces = new HashSet<int>();
 
             if (peers == null || !peers.Any())
@@ -49,7 +49,15 @@ namespace KosTorrentCli
             foreach (var peer in peers)
             {
                 communicator.DownloadTorrent(peer.PeerIp, peer.Port, handshakeMessage, torrentMetaData, allData, alreadyDownloadedPieces, creator);
+
+                if (alreadyDownloadedPieces.Count == torrentMetaData.Info.PieceCount)
+                    break;
             }
+
+            if (alreadyDownloadedPieces.Count == torrentMetaData.Info.PieceCount)
+                Console.WriteLine("Download completed");
+            else
+                Console.WriteLine($"Download is not completed: {alreadyDownloadedPieces.Count}/{torrentMetaData.Info.PieceCount} pieces. No more peers available");
         }
 
         static void GlobalErrorHandler(object sender, UnhandledExceptionEventArgs args)

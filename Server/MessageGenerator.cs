@@ -7,27 +7,34 @@ namespace KosTorrentCli.Server
 {
     public static class MessageGenerator
     {
-        public static byte[] GenerateBitFieldRequest(int pieceAmount)
+        /// <summary>
+        /// Bitfield length must match total piece count of the torrent, otherwise peers drop the connection.
+        /// </summary>
+        public static byte[] GenerateBitFieldRequest(int totalPieceCount, HashSet<int> downloadedPieces)
         {
             var bitfieldMessage = new List<byte>();
 
             //length part
-            var itemAmount = pieceAmount / 8;
-            if (pieceAmount % 8 > 0)
+            var itemAmount = totalPieceCount / 8;
+            if (totalPieceCount % 8 > 0)
                 ++itemAmount;
 
-            ++itemAmount;
-            var amountPart = BitConverter.GetBytes(itemAmount).Reverse();
+            var amountPart = BitConverter.GetBytes(itemAmount + 1).Reverse();
             bitfieldMessage.AddRange(amountPart);
 
             //bitfield id = 5
             var idPart = Encoding.ASCII.GetBytes(new[] { '\x05' });
             bitfieldMessage.AddRange(idPart);
 
-            for (var i = 0; i < itemAmount - 1; ++i)
+            //high bit of the first byte is piece 0
+            var body = new byte[itemAmount];
+
+            foreach (var piece in downloadedPieces)
             {
-                bitfieldMessage.AddRange(Encoding.ASCII.GetBytes(new[] { '\x00' }));
+                body[piece / 8] |= (byte)(0x80 >> (piece % 8));
             }
+
+            bitfieldMessage.AddRange(body);
 
             return bitfieldMessage.ToArray();
         }

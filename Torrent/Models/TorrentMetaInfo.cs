@@ -41,7 +41,10 @@ namespace KosTorrentCli.Torrent.Models
             var pieceStruct = trie.GetItem("files");
 
             if (pieceStruct.Type == TorrentMetaType.Unset)
+            {
+                this.Info.TotalLength = trie.GetItemLong("length") ?? 0;
                 return;
+            }
 
             var items = trie.GetChildrenByType(TorrentMetaType.Dictionary, pieceStruct);
 

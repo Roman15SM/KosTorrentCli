@@ -105,7 +105,7 @@ namespace KosTorrentCli.Bencode
             structure.Push(newChild);
         }
 
-        private int IntGetter(string source, ref int position)
+        private long IntGetter(string source, ref int position)
         {
             var sNumber = "";
             ++position;
@@ -117,7 +117,7 @@ namespace KosTorrentCli.Bencode
             }
 
             //e will be skipped by next iteration in for cycle.
-            _ = int.TryParse(sNumber, out var num);
+            _ = long.TryParse(sNumber, out var num);
             return num;
         }
 

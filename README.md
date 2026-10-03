@@ -30,9 +30,11 @@ With all questions please write me at Roman15SM@gmail.com
 
 :white_check_mark: Implement immediate piece allocation on hard drive(for now it is in memory and allocated once all available pieces are downloaded).
 
-:arrow_forward: Speed up process by serving each peer in a separate thread(Implement concurrent piece downloading).
+:white_check_mark: Solve endless unchoke issue.
 
-:arrow_forward: Solve endless unchoke issue.
+:white_check_mark: Add UDP support
+
+:arrow_forward: Speed up process by serving each peer in a separate thread(Implement concurrent piece downloading).
 
 :white_square_button: Make it asynchronious.
 

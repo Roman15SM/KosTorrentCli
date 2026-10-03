@@ -1,7 +1,9 @@
 ﻿using KosTorrentCli.Torrent.Models;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 
 namespace KosTorrentCli.Torrent
 {
@@ -17,7 +19,7 @@ namespace KosTorrentCli.Torrent
                 {
                     new TorrentFilePieceInfo
                     {
-                        Length = (long)(torrentMetaData.Info.PiecesBytes.Count/20) * torrentMetaData.Info.PieceLength,
+                        Length = torrentMetaData.Info.TotalLength,
                         Path = new List<string>
                         {
                             torrentMetaData.Info.Name
@@ -57,7 +59,8 @@ namespace KosTorrentCli.Torrent
 
         public void AllocatePiece(byte[] pieceData, TorrentMetaInfo metaInfo, int pieceNumber)
         {
-            long pieceStartPosition = pieceNumber * metaInfo.Info.PieceLength;
+            //cast before multiplication, otherwise int overflows for torrents larger than 2GB
+            long pieceStartPosition = (long)pieceNumber * metaInfo.Info.PieceLength;
             long currentPrefixSize = 0;
 
             foreach (var pieceInfo in this._pieceLocationData)
@@ -67,8 +70,8 @@ namespace KosTorrentCli.Torrent
                     currentPrefixSize += pieceInfo.Length;
                     continue;
                 }
-                
-                if(currentPrefixSize > pieceStartPosition + pieceData.Length)
+
+                if(currentPrefixSize >= pieceStartPosition + pieceData.Length)
                     return;
 
                 this.PopulatePieceDataInFile(pieceData, pieceInfo, pieceStartPosition, currentPrefixSize);
@@ -78,7 +81,8 @@ namespace KosTorrentCli.Torrent
 
         private void PopulatePieceDataInFile(byte[] pieceData, TorrentFilePieceInfo pieceInfo, long pieceStartPosition, long currentPrefixSize)
         {
-            using (Stream stream = File.Open(pieceInfo.Path[0], FileMode.Open))
+            //files are shared for read/write, so antivirus or explorer reading the file does not block piece writing
+            using (Stream stream = OpenWithRetry(pieceInfo.Path[0]))
             {
                 long position = 0;
                 long offset = 0;
@@ -89,8 +93,33 @@ namespace KosTorrentCli.Torrent
                 if (pieceStartPosition > currentPrefixSize)
                     position = pieceStartPosition - currentPrefixSize;
 
+                //piece can continue in the next file, so write only the part which fits into the current one
+                var count = Math.Min(pieceData.Length - offset, pieceInfo.Length - position);
+
                 stream.Position = position;
-                stream.Write(pieceData, (int)offset, pieceData.Length - (int)offset);
+                stream.Write(pieceData, (int)offset, (int)count);
+            }
+        }
+
+        /// <summary>
+        /// Some processes (e.g. antivirus scanning a freshly written .exe) can lock the file for a short time.
+        /// </summary>
+        private Stream OpenWithRetry(string path)
+        {
+            const int attempts = 5;
+            const int delayMs = 500;
+
+            for (var attempt = 1; ; ++attempt)
+            {
+                try
+                {
+                    return new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
+                }
+                catch (IOException e) when (attempt < attempts && e is not FileNotFoundException && e is not DirectoryNotFoundException)
+                {
+                    Console.WriteLine($"File {path} is locked, retry {attempt}/{attempts - 1}: {e.Message}");
+                    Thread.Sleep(delayMs);
+                }
             }
         }
     }

@@ -80,7 +80,7 @@ namespace KosTorrentCli.Torrent.Models
             }
         }
 
-        private bool VerifyPeerIpList(List<byte> peerIps)
+        private static bool VerifyPeerIpList(List<byte> peerIps)
         {
             //the peers value may be a string consisting of multiples of 6 bytes.
             //First 4 bytes are the IP address and last 2 bytes are the port number.
@@ -88,7 +88,10 @@ namespace KosTorrentCli.Torrent.Models
             return peerIps.Count > 0 && peerIps.Count % PeerIpByteCount == 0;
         }
 
-        private List<PeerResponseItem> ExtractPeers(List<byte> bencodeByteData)
+        /// <summary>
+        /// Parses compact peer list. Used for both HTTP (compact=1) and UDP tracker responses.
+        /// </summary>
+        public static List<PeerResponseItem> ExtractPeers(List<byte> bencodeByteData)
         {
             var result = new List<PeerResponseItem>();
 

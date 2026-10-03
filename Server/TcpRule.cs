@@ -1,47 +1,76 @@
-﻿using System;
-using System.Linq;
-using NetFwTypeLib;
+using System;
+using System.Runtime.Versioning;
 
 namespace KosTorrentCli.Server
 {
+    /// <summary>
+    /// Windows Firewall rule management via late-bound COM (HNetCfg.FwPolicy2).
+    /// `dynamic` is used instead of NetFwTypeLib COM reference, because COM references
+    /// can't be built by the dotnet CLI (VS Code, CI, Linux).
+    /// </summary>
     public static class TcpRule
     {
         private static readonly string RuleName = "KosTorrentCli";
 
+        //values of NET_FW_* enums from NetFwTypeLib
+        private const int ProfilePrivate = 2;
+        private const int ProfilePublic = 4;
+        private const int DirectionIn = 1;
+        private const int ProtocolTcp = 6;
+        private const int ActionAllow = 1;
+
+        /// <summary>
+        /// Inbound rule is needed only for incoming peer connections (seeding).
+        /// Adding a firewall rule requires administrator rights, so download must not fail without it.
+        /// </summary>
         public static void AddTcpRule()
         {
-            var path = $@"{AppContext.BaseDirectory}KosTorrentCli.exe";
+            if (!OperatingSystem.IsWindows())
+                return;
 
-            INetFwPolicy2 firewallPolicy = (INetFwPolicy2)Activator.CreateInstance(
-                Type.GetTypeFromProgID("HNetCfg.FwPolicy2"));
-
-            INetFwRule firewallRule = firewallPolicy
-                .Rules
-                .OfType<INetFwRule>()?
-                .Where(x => x.Name == RuleName).FirstOrDefault();
-
-            if (firewallRule == null)
+            try
             {
-                AddRule(firewallPolicy, NET_FW_PROFILE_TYPE2_.NET_FW_PROFILE2_PRIVATE, NET_FW_RULE_DIRECTION_.NET_FW_RULE_DIR_IN, path);
-                AddRule(firewallPolicy, NET_FW_PROFILE_TYPE2_.NET_FW_PROFILE2_PUBLIC, NET_FW_RULE_DIRECTION_.NET_FW_RULE_DIR_IN, path);
+                AddTcpRuleInternal();
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"Firewall rule was not added (run as administrator to add it): {e.Message}");
             }
         }
 
-        private static void AddRule(INetFwPolicy2 firewallPolicy, NET_FW_PROFILE_TYPE2_ profile, NET_FW_RULE_DIRECTION_ direction, string path)
+        [SupportedOSPlatform("windows")]
+        private static void AddTcpRuleInternal()
         {
-            INetFwRule firewallRule = (INetFwRule)Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FWRule"));
+            var path = $@"{AppContext.BaseDirectory}KosTorrentCli.exe";
+
+            dynamic firewallPolicy = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FwPolicy2"));
+
+            foreach (dynamic rule in firewallPolicy.Rules)
+            {
+                if (rule.Name == RuleName)
+                    return;
+            }
+
+            AddRule(firewallPolicy, ProfilePrivate, DirectionIn, path);
+            AddRule(firewallPolicy, ProfilePublic, DirectionIn, path);
+        }
+
+        [SupportedOSPlatform("windows")]
+        private static void AddRule(dynamic firewallPolicy, int profile, int direction, string path)
+        {
+            dynamic firewallRule = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FWRule"));
             firewallRule.Name = RuleName;
             firewallRule.Description = "KosTorrentCli inbound TCP rule";
             firewallRule.ApplicationName = path;
-            firewallRule.Protocol = (int)NET_FW_IP_PROTOCOL_.NET_FW_IP_PROTOCOL_TCP;
+            firewallRule.Protocol = ProtocolTcp;
             firewallRule.LocalPorts = "*";
             firewallRule.Direction = direction;
-            firewallRule.Action = NET_FW_ACTION_.NET_FW_ACTION_ALLOW;
+            firewallRule.Action = ActionAllow;
             firewallRule.Enabled = true;
             firewallRule.EdgeTraversal = false;
             firewallRule.RemoteAddresses = "*";
             firewallRule.RemotePorts = "*";
-            firewallRule.Profiles = (int)profile;
+            firewallRule.Profiles = profile;
             firewallRule.InterfaceTypes = "All";
 
             firewallPolicy.Rules.Add(firewallRule);

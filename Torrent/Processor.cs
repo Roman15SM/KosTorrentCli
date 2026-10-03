@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
+using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -15,6 +16,14 @@ namespace KosTorrentCli.Torrent
     public class Processor
     {
         private object _locker = new object();
+        private const int ListeningPort = 6881;
+        private const int HttpTrackerTimeoutMs = 10000;
+
+        //HttpClient is meant to be shared, a new instance per request exhausts sockets
+        private static readonly HttpClient HttpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromMilliseconds(HttpTrackerTimeoutMs)
+        };
 
         /// <summary>
         /// Get peers in parallel from AnnounceUrl and all urls specified in AnnounceList.
@@ -29,7 +38,7 @@ namespace KosTorrentCli.Torrent
             var urlList = new List<string>(metaInfo.AnnounceList)
             {
                 metaInfo.AnnounceUrl
-            };
+            }.Distinct().ToList();
 
             var encodedHash = HttpUtility.UrlEncode(infoHash);
             var peers = new List<PeerResponseItem>();
@@ -37,7 +46,20 @@ namespace KosTorrentCli.Torrent
 
             Parallel.ForEach(urlList, ul =>
             {
-                var responsePeers = GetPeersFromUrl(metaInfo, ul, encodedHash, peerId);
+                List<PeerResponseItem> responsePeers;
+
+                //a single dead tracker should not break peer collection from the others
+                try
+                {
+                    responsePeers = Uri.TryCreate(ul, UriKind.Absolute, out var uri) && uri.Scheme == "udp"
+                        ? UdpTrackerClient.GetPeers(uri, infoHash, peerId, metaInfo.Info.TotalLength, ListeningPort)
+                        : GetPeersFromUrl(metaInfo, ul, encodedHash, peerId);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"Tracker {ul} failed: {e.Message}");
+                    return;
+                }
 
                 lock (_locker)
                 {
@@ -55,8 +77,8 @@ namespace KosTorrentCli.Torrent
         }
 
         /// <summary>
-        /// Get peers ip addresses from url. Currently I'm not using compact version here
-        /// TODO: implement compact way possibility
+        /// Get peers ip addresses from HTTP tracker url. Compact version is requested,
+        /// since a lot of trackers do not support the dictionary one anymore.
         /// </summary>
         /// <param name="metaInfo"></param>
         /// <param name="announceUrl"></param>
@@ -66,21 +88,16 @@ namespace KosTorrentCli.Torrent
         {
             if (!IsUrlValid(announceUrl))
                 return new List<PeerResponseItem>();
-            var hasParameters = HttpUtility.ParseQueryString(metaInfo.AnnounceUrl).Count > 1;
+            var hasParameters = announceUrl.Contains('?');
 
             var url = $"{announceUrl}{(hasParameters ? "&" : "?")}info_hash={hashedInfo}&peer_id={peerId}" +
-                      $"&port=6881&uploaded=0&downloaded=0&left={metaInfo.Info.TotalLength}&compact=0&no_peer_id=1&event=started";
+                      $"&port={ListeningPort}&uploaded=0&downloaded=0&left={metaInfo.Info.TotalLength}&compact=1&no_peer_id=1&event=started";
 
             var encodedUrl = HttpUtility.UrlPathEncode(url);
 
-            var request = (HttpWebRequest)WebRequest.Create(encodedUrl);
-            var response = (HttpWebResponse)request.GetResponse();
-
-            using var ms = new MemoryStream();
-            response.GetResponseStream()?.CopyTo(ms);
+            var data = HttpClient.GetByteArrayAsync(encodedUrl).GetAwaiter().GetResult();
 
             var parser = new Parser();
-            var data = ms.ToArray();
             var responseText = Encoding.ASCII.GetString(data);
             var responseTrie = parser.Parse(responseText, data);
             var responseObj = new AnnounceResponse(responseTrie);
@@ -90,10 +107,7 @@ namespace KosTorrentCli.Torrent
 
         public byte[] GenerateSha1Hash(byte[] input)
         {
-            using var hashManager = new SHA1Managed();
-            var hash = hashManager.ComputeHash(input);
-
-            return hash;
+            return SHA1.HashData(input);
         }
 
         private bool IsUrlValid(string url)
