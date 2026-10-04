@@ -19,6 +19,10 @@ namespace KosTorrentCli.Torrent.Models
 
         public bool IsComplete => ReceivedBytes == Data.Length;
 
+        //set by the peer which received the last block: only that peer validates and writes the piece.
+        //In endgame several peers download the same piece, so blocks are written under lock(piece)
+        public bool IsFinalizing { get; set; }
+
         public PieceProgress(int pieceLength, int blockSize)
         {
             var blockCount = (pieceLength + blockSize - 1) / blockSize;

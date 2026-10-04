@@ -132,5 +132,19 @@ namespace KosTorrentCli.Server
 
             return handshakeMessage.ToArray();
         }
+
+        /// <summary>
+        /// Cancel has the same payload as request: index, begin, length. Used in endgame,
+        /// when the same block was requested from several peers and one of them already sent it.
+        /// </summary>
+        public static byte[] GenerateCancelRequest(int index, int begin, int length)
+        {
+            var cancelMessage = GenerateRequestRequest(index, begin, length);
+
+            //cancel id = 8
+            cancelMessage[4] = 8;
+
+            return cancelMessage;
+        }
     }
 }

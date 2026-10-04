@@ -57,7 +57,7 @@ namespace KosTorrentCli.Torrent
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine($"Tracker {ul} failed: {e.Message}");
+                    Log.Warning($"Tracker {ul} failed: {e.Message}");
                     return;
                 }
 

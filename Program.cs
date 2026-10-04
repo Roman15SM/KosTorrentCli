@@ -44,7 +44,7 @@ namespace KosTorrentCli
 
             if (peers == null || !peers.Any())
             {
-                Console.WriteLine(GetNoPeersReason(torrentMetaData, torrentDataTrie));
+                Log.Error(GetNoPeersReason(torrentMetaData, torrentDataTrie));
                 return;
             }
 
@@ -71,9 +71,9 @@ namespace KosTorrentCli
             });
 
             if (alreadyDownloadedPieces.Count == torrentMetaData.Info.PieceCount)
-                Console.WriteLine("Download completed");
+                Log.Info("Download completed");
             else
-                Console.WriteLine($"Download is not completed: {alreadyDownloadedPieces.Count}/{torrentMetaData.Info.PieceCount} pieces. No more peers available");
+                Log.Error($"Download is not completed: {alreadyDownloadedPieces.Count}/{torrentMetaData.Info.PieceCount} pieces. No more peers available");
         }
 
         /// <summary>
@@ -97,8 +97,8 @@ namespace KosTorrentCli
         static void GlobalErrorHandler(object sender, UnhandledExceptionEventArgs args)
         {
             Exception e = (Exception)args.ExceptionObject;
-            Console.WriteLine("GlobalErrorHandler caught : " + e.Message);
-            Console.WriteLine("Runtime terminating: {0}", args.IsTerminating);
+            Log.Error("GlobalErrorHandler caught : " + e.Message);
+            Log.Error($"Runtime terminating: {args.IsTerminating}");
         }
     }
 }

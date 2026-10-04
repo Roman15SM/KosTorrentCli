@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using System.Collections.Concurrent;
 
@@ -44,11 +43,17 @@ namespace KosTorrentCli.Server
             public int OutstandingRequests { get; set; }
 
             //pieces which peer has, and which are not started yet. Sorted to download file sequentially.
-            //Pieces owned by other peers stay here: they are released if the owner disconnects
+            //Pieces owned by other peers stay here: they are released if the owner disconnects, and are helped with in endgame
             public SortedSet<int> AvailablePieces { get; } = new SortedSet<int>();
 
-            //pieces owned by this peer: only this peer downloads them and modifies their PieceProgress
+            //pieces owned by this peer: only this peer claims their blocks via PieceProgress.RequestedBlocks
             public List<int> ActivePieces { get; } = new List<int>();
+
+            //endgame: blocks of other peers' pieces requested from this peer. Tracked per peer,
+            //so they can be cancelled when another peer delivers the block first
+            public HashSet<(int Piece, int Block)> EndgameRequests { get; } = new HashSet<(int Piece, int Block)>();
+
+            public bool IsInEndgame { get; set; }
 
             //bitfield or have message arrived, so we know which pieces the peer has
             public bool HasPieceInfo { get; set; }
@@ -57,11 +62,11 @@ namespace KosTorrentCli.Server
             public CancellationTokenSource DownloadCompleted { get; init; }
         }
 
-        public void DownloadTorrent(string endpoint, 
-            int port, 
-            byte[] message, 
-            TorrentMetaInfo metaInfo, 
-            ConcurrentDictionary<int, PieceProgress> allData, 
+        public void DownloadTorrent(string endpoint,
+            int port,
+            byte[] message,
+            TorrentMetaInfo metaInfo,
+            ConcurrentDictionary<int, PieceProgress> allData,
             ConcurrentDictionary<int, int> alreadyDownloadedPieces,
             FileCreator creator,
             CancellationTokenSource downloadCompleted)
@@ -80,7 +85,7 @@ namespace KosTorrentCli.Server
             {
                 if (!listener.ConnectAsync(endpoint, port).Wait(ConnectTimeoutMs))
                 {
-                    Console.WriteLine($"Peer {endpoint}:{port} connection timeout");
+                    Log.Warning($"Peer {state.Peer} connection timeout");
                     return;
                 }
 
@@ -89,7 +94,10 @@ namespace KosTorrentCli.Server
                 listener.SendTimeout = ReceiveTimeoutMs;
 
                 if (!IsHandShakeSuccessful(listener, message))
+                {
+                    Log.Warning($"Peer {state.Peer} handshake failed");
                     return;
+                }
 
                 var stream = listener.GetStream();
                 var lastPieceDataTime = DateTime.UtcNow;
@@ -99,15 +107,15 @@ namespace KosTorrentCli.Server
 
                 while (!downloadCompleted.IsCancellationRequested)
                 {
-                    if (HasNothingToDownload(state, alreadyDownloadedPieces))
+                    if (HasNothingToDownload(state, allData, alreadyDownloadedPieces))
                     {
-                        Console.WriteLine($"Peer {endpoint}:{port} has no more pieces we need");
+                        Log.Info($"Peer {state.Peer} has no more pieces we need");
                         return;
                     }
 
                     if (DateTime.UtcNow - lastPieceDataTime > PeerIdleTimeout)
                     {
-                        Console.WriteLine($"Peer {endpoint}:{port} did not send any piece data for {PeerIdleTimeout.TotalSeconds}s");
+                        Log.Warning($"Peer {state.Peer} did not send any piece data for {PeerIdleTimeout.TotalSeconds}s");
                         return;
                     }
 
@@ -116,7 +124,7 @@ namespace KosTorrentCli.Server
 
                     if (!ReadExactly(stream, lengthPrefix, 0, IntByteLength))
                     {
-                        Console.WriteLine($"Peer {endpoint}:{port} closed the connection");
+                        Log.Warning($"Peer {state.Peer} closed the connection");
                         return;
                     }
 
@@ -134,7 +142,7 @@ namespace KosTorrentCli.Server
 
                     if (!ReadExactly(stream, communicationBlock, IntByteLength, length))
                     {
-                        Console.WriteLine($"Peer {endpoint}:{port} closed the connection");
+                        Log.Warning($"Peer {state.Peer} closed the connection");
                         return;
                     }
 
@@ -144,9 +152,12 @@ namespace KosTorrentCli.Server
                     if (messageId == PeerMessageType.Piece)
                         lastPieceDataTime = DateTime.UtcNow;
                     else
-                        Console.WriteLine($"Peer {endpoint}:{port} Message Id: {messageId}");
+                        Log.Info($"Peer {state.Peer} Message Id: {messageId}");
 
-                    MessageProcessor(communicationBlock, stream, metaInfo, alreadyDownloadedPieces, communicationBlock.Length, messageId, allData, creator, state);
+                    MessageProcessor(communicationBlock, stream, metaInfo, alreadyDownloadedPieces, messageId, allData, creator, state);
+
+                    if (state.EndgameRequests.Count > 0)
+                        SendCancels(stream, metaInfo, allData, alreadyDownloadedPieces, state);
                 }
             }
             catch (Exception) when (downloadCompleted.IsCancellationRequested)
@@ -156,18 +167,26 @@ namespace KosTorrentCli.Server
             catch (Exception e) when (IsConnectionError(e))
             {
                 //refused/reset connections are usual for peers, so there is no need for the whole stack trace
-                Console.WriteLine($"Peer {endpoint}:{port} connection failed: {(e.InnerException ?? e).Message}");
+                Log.Warning($"Peer {state.Peer} connection failed: {(e.InnerException ?? e).Message}");
             }
             catch (Exception e)
             {
-                Console.WriteLine($"Peer {endpoint}:{port} failed: {e}");
+                Log.Error($"Peer {state.Peer} failed: {e}");
             }
             finally
             {
                 //release unfinished pieces, so other peers can claim them
                 foreach (var activePiece in state.ActivePieces)
                 {
-                    allData.TryRemove(activePiece, out _);
+                    if (!allData.TryGetValue(activePiece, out var piece))
+                        continue;
+
+                    lock (piece)
+                    {
+                        //in endgame another peer can be validating/writing this piece right now
+                        if (!piece.IsFinalizing)
+                            Release(allData, activePiece, piece);
+                    }
                 }
 
                 listener.Close();
@@ -175,17 +194,39 @@ namespace KosTorrentCli.Server
         }
 
         /// <summary>
+        /// Removes the piece only if it is still the same PieceProgress instance:
+        /// after release the piece can be claimed by another peer, and that claim must not be removed.
+        /// </summary>
+        private static void Release(ConcurrentDictionary<int, PieceProgress> allData, int pieceIndex, PieceProgress piece)
+        {
+            allData.TryRemove(new KeyValuePair<int, PieceProgress>(pieceIndex, piece));
+        }
+
+        /// <summary>
         /// Peer is useless when everything it has is already downloaded (possibly by other peers).
         /// Checked only when nothing is in flight, since it walks over all available pieces.
         /// </summary>
-        private static bool HasNothingToDownload(PeerState state, ConcurrentDictionary<int, int> alreadyDownloadedPieces)
+        private static bool HasNothingToDownload(PeerState state, ConcurrentDictionary<int, PieceProgress> allData, ConcurrentDictionary<int, int> alreadyDownloadedPieces)
         {
-            if (!state.HasPieceInfo || state.ActivePieces.Count > 0 || state.OutstandingRequests > 0)
+            if (!state.HasPieceInfo || state.OutstandingRequests > 0)
+                return false;
+
+            PruneActivePieces(state, allData);
+
+            if (state.ActivePieces.Count > 0)
                 return false;
 
             state.AvailablePieces.RemoveWhere(alreadyDownloadedPieces.ContainsKey);
 
             return state.AvailablePieces.Count == 0;
+        }
+
+        /// <summary>
+        /// In endgame a piece owned by this peer can be completed by another peer.
+        /// </summary>
+        private static void PruneActivePieces(PeerState state, ConcurrentDictionary<int, PieceProgress> allData)
+        {
+            state.ActivePieces.RemoveAll(pieceIndex => !allData.TryGetValue(pieceIndex, out var piece) || piece.IsFinalizing);
         }
 
         private static bool IsConnectionError(Exception e)
@@ -217,14 +258,13 @@ namespace KosTorrentCli.Server
             return true;
         }
 
-        private void MessageProcessor(byte[] data, 
-            NetworkStream stream, 
-            TorrentMetaInfo metaInfo, 
-            ConcurrentDictionary<int, int> alreadyDownloadedPieces, 
-            int bytes, 
-            PeerMessageType messageId, 
-            ConcurrentDictionary<int, PieceProgress> allData, 
-            FileCreator creator, 
+        private void MessageProcessor(byte[] data,
+            NetworkStream stream,
+            TorrentMetaInfo metaInfo,
+            ConcurrentDictionary<int, int> alreadyDownloadedPieces,
+            PeerMessageType messageId,
+            ConcurrentDictionary<int, PieceProgress> allData,
+            FileCreator creator,
             PeerState state)
         {
             switch (messageId)
@@ -233,6 +273,7 @@ namespace KosTorrentCli.Server
                     //peer discards all pending requests on choke
                     state.IsChoked = true;
                     state.OutstandingRequests = 0;
+                    state.EndgameRequests.Clear();
 
                     foreach (var activePiece in state.ActivePieces)
                     {
@@ -290,51 +331,60 @@ namespace KosTorrentCli.Server
                         }
                     }
 
-                    Console.WriteLine($"Peer {state.Peer} has {availablePieces} pieces we need");
+                    Log.Info($"Peer {state.Peer} has {availablePieces} pieces we need");
                     state.HasPieceInfo = true;
                     SendInterested(stream, state);
                     break;
                 default:
-                    Console.WriteLine($"Peer {state.Peer} unsupported message {(int)messageId}: {Encoding.ASCII.GetString(data, 0, bytes)}");
+                    //e.g. 20 - extension protocol (BEP 10), which is not supported yet
+                    Log.Info($"Peer {state.Peer} unsupported message {(int)messageId}, length {data.Length - IntByteLength}");
                     break;
             }
         }
 
-        private void ProcessBlock(byte[] data, 
-            TorrentMetaInfo metaInfo, 
-            ConcurrentDictionary<int, int> alreadyDownloadedPieces, 
-            ConcurrentDictionary<int, PieceProgress> allData, 
-            FileCreator creator, 
+        private void ProcessBlock(byte[] data,
+            TorrentMetaInfo metaInfo,
+            ConcurrentDictionary<int, int> alreadyDownloadedPieces,
+            ConcurrentDictionary<int, PieceProgress> allData,
+            FileCreator creator,
             PeerState state)
         {
             var pieceIndex = MessageParser.GetPieceIndex(data);
             var blockOffset = MessageParser.GetBlockOffset(data);
             var blockLength = data.Length - PieceHeaderSize;
-
-            //accept blocks only for pieces owned by this peer: a late block of a released or discarded piece
-            //must not be written into the progress of another peer which claimed that piece since
-            if (!state.ActivePieces.Contains(pieceIndex) || !allData.TryGetValue(pieceIndex, out var piece))
-                return;
-
             var blockIndex = blockOffset / BlockSize;
+
+            //accept blocks only for own pieces or for blocks requested in endgame: a late block of a released or discarded piece
+            //must not be written into the progress of a piece which was claimed by another peer since
+            var isEndgameBlock = state.EndgameRequests.Remove((pieceIndex, blockIndex));
+
+            if ((!state.ActivePieces.Contains(pieceIndex) && !isEndgameBlock) || !allData.TryGetValue(pieceIndex, out var piece))
+                return;
 
             if (blockOffset % BlockSize != 0 || blockIndex >= piece.ReceivedBlocks.Length
                 || blockLength != Math.Min(BlockSize, piece.Data.Length - blockOffset))
             {
-                Console.WriteLine($"Peer {state.Peer} sent unexpected block of piece {pieceIndex}: offset {blockOffset}, length {blockLength}");
+                Log.Warning($"Peer {state.Peer} sent unexpected block of piece {pieceIndex}: offset {blockOffset}, length {blockLength}");
                 return;
             }
 
-            //duplicate
-            if (piece.ReceivedBlocks[blockIndex])
-                return;
+            //in endgame several peers write into the same piece
+            lock (piece)
+            {
+                //duplicate: in endgame the same block is requested from several peers
+                if (piece.IsFinalizing || piece.ReceivedBlocks[blockIndex])
+                    return;
 
-            Buffer.BlockCopy(data, PieceHeaderSize, piece.Data, blockOffset, blockLength);
-            piece.ReceivedBlocks[blockIndex] = true;
-            piece.ReceivedBytes += blockLength;
+                Buffer.BlockCopy(data, PieceHeaderSize, piece.Data, blockOffset, blockLength);
+                piece.ReceivedBlocks[blockIndex] = true;
+                piece.ReceivedBytes += blockLength;
 
-            if (!piece.IsComplete)
-                return;
+                if (!piece.IsComplete)
+                    return;
+
+                //only one peer validates and writes the piece
+                piece.IsFinalizing = true;
+            }
 
             //ownership in allData is released only after the piece is marked as downloaded (or rejected):
             //while hashing and writing, other peers must still see the piece as owned, otherwise they claim and download it again
@@ -343,8 +393,8 @@ namespace KosTorrentCli.Server
             if (!ValidatePiece(metaInfo.Info.PiecesBytes.Skip(pieceIndex * PieceHashLength).Take(PieceHashLength).ToArray(), piece.Data))
             {
                 //piece is not requested from this peer again, another peer will claim it
-                allData.TryRemove(pieceIndex, out _);
-                Console.WriteLine($"Peer {state.Peer} sent invalid piece {pieceIndex} (SHA-1 mismatch)");
+                Release(allData, pieceIndex, piece);
+                Log.Error($"Peer {state.Peer} sent invalid piece {pieceIndex} (SHA-1 mismatch)");
                 return;
             }
 
@@ -355,16 +405,16 @@ namespace KosTorrentCli.Server
             }
             catch (IOException e)
             {
-                allData.TryRemove(pieceIndex, out _);
-                Console.WriteLine($"Piece {pieceIndex} from {state.Peer} was not saved, it will be downloaded again: {e.Message}");
+                Release(allData, pieceIndex, piece);
+                Log.Error($"Piece {pieceIndex} from {state.Peer} was not saved, it will be downloaded again: {e.Message}");
                 state.AvailablePieces.Add(pieceIndex);
                 return;
             }
 
             alreadyDownloadedPieces.TryAdd(pieceIndex, pieceIndex);
-            allData.TryRemove(pieceIndex, out _);
+            Release(allData, pieceIndex, piece);
             //single line: with parallel peers two separate WriteLine calls get interleaved with other peers' output
-            Console.WriteLine($"Piece {pieceIndex} downloaded from {state.Peer}, size: {piece.Data.Length} ({alreadyDownloadedPieces.Count}/{metaInfo.Info.PieceCount})");
+            Log.Info($"Piece {pieceIndex} downloaded from {state.Peer}, size: {piece.Data.Length} ({alreadyDownloadedPieces.Count}/{metaInfo.Info.PieceCount})");
 
             if (alreadyDownloadedPieces.Count == metaInfo.Info.PieceCount)
                 state.DownloadCompleted.Cancel();
@@ -382,13 +432,18 @@ namespace KosTorrentCli.Server
 
             while (state.OutstandingRequests < MaxOutstandingRequests)
             {
-                if (!TryGetNextBlock(metaInfo, allData, alreadyDownloadedPieces, state, out var piece, out var pieceIndex, out var blockIndex))
+                if (!TryGetNextBlock(metaInfo, allData, alreadyDownloadedPieces, state, out var piece, out var pieceIndex, out var blockIndex, out var isEndgame))
                     return;
 
                 var begin = blockIndex * BlockSize;
                 var length = Math.Min(BlockSize, piece.Data.Length - begin);
 
-                piece.RequestedBlocks[blockIndex] = true;
+                //owner's requests are tracked in the piece, endgame duplicates - per peer
+                if (isEndgame)
+                    state.EndgameRequests.Add((pieceIndex, blockIndex));
+                else
+                    piece.RequestedBlocks[blockIndex] = true;
+
                 ++state.OutstandingRequests;
 
                 var request = MessageGenerator.GenerateRequestRequest(pieceIndex, begin, length);
@@ -402,8 +457,12 @@ namespace KosTorrentCli.Server
             PeerState state,
             out PieceProgress piece,
             out int pieceIndex,
-            out int blockIndex)
+            out int blockIndex,
+            out bool isEndgame)
         {
+            isEndgame = false;
+            PruneActivePieces(state, allData);
+
             foreach (var activePiece in state.ActivePieces)
             {
                 if (!allData.TryGetValue(activePiece, out piece))
@@ -420,14 +479,83 @@ namespace KosTorrentCli.Server
                 }
             }
 
+            if (TryClaimNextPiece(metaInfo, allData, alreadyDownloadedPieces, state))
+                return TryGetNextBlock(metaInfo, allData, alreadyDownloadedPieces, state, out piece, out pieceIndex, out blockIndex, out isEndgame);
+
+            isEndgame = true;
+            return TryGetEndgameBlock(metaInfo, allData, alreadyDownloadedPieces, state, out piece, out pieceIndex, out blockIndex);
+        }
+
+        /// <summary>
+        /// Endgame: when every remaining piece is claimed, peers without own work request missing blocks of other peers' pieces.
+        /// The first delivered copy wins, the rest are cancelled (see SendCancels). Without it the download waits for the slowest peer.
+        /// </summary>
+        private bool TryGetEndgameBlock(TorrentMetaInfo metaInfo,
+            ConcurrentDictionary<int, PieceProgress> allData,
+            ConcurrentDictionary<int, int> alreadyDownloadedPieces,
+            PeerState state,
+            out PieceProgress piece,
+            out int pieceIndex,
+            out int blockIndex)
+        {
             piece = null;
             pieceIndex = -1;
             blockIndex = -1;
 
-            if (!TryClaimNextPiece(metaInfo, allData, alreadyDownloadedPieces, state))
+            //not every remaining piece is claimed yet: TryClaimNextPiece failed only because this peer has none of them
+            if (alreadyDownloadedPieces.Count + allData.Count < metaInfo.Info.PieceCount)
                 return false;
 
-            return TryGetNextBlock(metaInfo, allData, alreadyDownloadedPieces, state, out piece, out pieceIndex, out blockIndex);
+            foreach (var candidate in state.AvailablePieces)
+            {
+                if (!allData.TryGetValue(candidate, out var candidatePiece) || candidatePiece.IsFinalizing)
+                    continue;
+
+                for (var i = 0; i < candidatePiece.ReceivedBlocks.Length; ++i)
+                {
+                    if (!candidatePiece.ReceivedBlocks[i] && !state.EndgameRequests.Contains((candidate, i)))
+                    {
+                        if (!state.IsInEndgame)
+                        {
+                            state.IsInEndgame = true;
+                            Log.Info($"Peer {state.Peer} entered endgame: helping with pieces of other peers");
+                        }
+
+                        piece = candidatePiece;
+                        pieceIndex = candidate;
+                        blockIndex = i;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Cancels endgame requests whose blocks were already delivered by other peers, so bandwidth is not wasted on duplicates.
+        /// </summary>
+        private void SendCancels(NetworkStream stream, TorrentMetaInfo metaInfo, ConcurrentDictionary<int, PieceProgress> allData, ConcurrentDictionary<int, int> alreadyDownloadedPieces, PeerState state)
+        {
+            var delivered = state.EndgameRequests
+                .Where(request => !allData.TryGetValue(request.Piece, out var piece) || piece.IsFinalizing || piece.ReceivedBlocks[request.Block])
+                .ToList();
+
+            if (delivered.Count == 0)
+                return;
+
+            foreach (var (pieceIndex, block) in delivered)
+            {
+                var begin = block * BlockSize;
+                var length = Math.Min(BlockSize, metaInfo.Info.GetPieceLength(pieceIndex) - begin);
+                var cancel = MessageGenerator.GenerateCancelRequest(pieceIndex, begin, length);
+                stream.Write(cancel, 0, cancel.Length);
+
+                state.EndgameRequests.Remove((pieceIndex, block));
+                state.OutstandingRequests = Math.Max(0, state.OutstandingRequests - 1);
+            }
+
+            FillRequests(stream, metaInfo, allData, alreadyDownloadedPieces, state);
         }
 
         /// <summary>

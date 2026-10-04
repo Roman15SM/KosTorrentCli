@@ -117,7 +117,7 @@ namespace KosTorrentCli.Torrent
                 }
                 catch (IOException e) when (attempt < attempts && e is not FileNotFoundException && e is not DirectoryNotFoundException)
                 {
-                    Console.WriteLine($"File {path} is locked, retry {attempt}/{attempts - 1}: {e.Message}");
+                    Log.Warning($"File {path} is locked, retry {attempt}/{attempts - 1}: {e.Message}");
                     Thread.Sleep(delayMs);
                 }
             }

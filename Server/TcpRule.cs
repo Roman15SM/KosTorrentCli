@@ -34,7 +34,7 @@ namespace KosTorrentCli.Server
             }
             catch (Exception e)
             {
-                Console.WriteLine($"Firewall rule was not added (run as administrator to add it): {e.Message}");
+                Log.Warning($"Firewall rule was not added (run as administrator to add it): {e.Message}");
             }
         }
 
