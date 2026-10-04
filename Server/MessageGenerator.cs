@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,7 +11,7 @@ namespace KosTorrentCli.Server
         /// <summary>
         /// Bitfield length must match total piece count of the torrent, otherwise peers drop the connection.
         /// </summary>
-        public static byte[] GenerateBitFieldRequest(int totalPieceCount, HashSet<int> downloadedPieces)
+        public static byte[] GenerateBitFieldRequest(int totalPieceCount, ConcurrentDictionary<int, int> downloadedPieces)
         {
             var bitfieldMessage = new List<byte>();
 
@@ -31,7 +32,7 @@ namespace KosTorrentCli.Server
 
             foreach (var piece in downloadedPieces)
             {
-                body[piece / 8] |= (byte)(0x80 >> (piece % 8));
+                body[piece.Key / 8] |= (byte)(0x80 >> (piece.Key % 8));
             }
 
             bitfieldMessage.AddRange(body);

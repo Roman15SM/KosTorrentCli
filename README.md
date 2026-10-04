@@ -46,6 +46,10 @@ With all questions please write me at Roman15SM@gmail.com
 
 :white_square_button: Implement seeding.
 
+:white_square_button: Add web seeds support (BEP 19: download pieces from HTTP mirrors listed in torrent's url-list).
+
+:white_square_button: Add Metalink support.
+
 :white_square_button: Port it to linux.
 
 :white_square_button: Write a documentation and full beginner guide.
